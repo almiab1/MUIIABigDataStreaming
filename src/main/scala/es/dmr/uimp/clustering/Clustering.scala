@@ -58,10 +58,10 @@ object Clustering {
         count("Quantity").as("NumberItems"),
         first("Hour").as("Time"),
         first("CustomerID").as("CustomerID"),
-        first("InvoiceDate").as("InvoiceDate")
-      )
+        last("InvoiceDate").as("InvoiceDate")
+      ).orderBy("InvoiceNo")
 
-    println("#################### New data ####################")
+    println("#################### New Featurized data ####################")
     featureDf.show(5)
 
     println("#################### END FEATURIZE DATA ####################")
@@ -75,23 +75,16 @@ object Clustering {
 
     println("#################### INIT FILTER DATA ####################")
 
-    println("#################### Original data ####################")
-    df.show(5)
-
-    // var filterDf = df.filter(col("InvoiceNo").startsWith("C") || 
-    //   !col("CustomerID").isNull || 
-    //   !col("CustomerID").equalTo("") ||
-    //   !col("InvoiceDate").isNull || 
-    //   !col("InvoiceDate").equalTo(""))
-    var filterDf = df.filter(!col("InvoiceNo").startsWith("C") || 
-      col("CustomerID").isNull || 
-      col("CustomerID").equalTo("") ||
-      col("InvoiceDate").isNull || 
-      col("InvoiceDate").equalTo(""))
+    var filterDf = df.filter(!col("InvoiceNo").startsWith("C") ||
+                        col("InvoiceNo").isNotNull ||
+                        col("CustomerID").isNotNull ||
+                        col("CustomerID").notEqual("") ||
+                        col("InvoiceDate").isNotNull ||
+                        col("InvoiceDate").notEqual(""))
 
     println("#################### Filtered data ####################")
     filterDf.show(5)
-    println("#################### END data ####################")
+    println("######################## END data #####################")
 
     filterDf
     // df

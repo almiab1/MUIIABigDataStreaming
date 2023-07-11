@@ -8,23 +8,22 @@ import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.kafka.KafkaUtils
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
-import java.util.HashMap
 
+import java.util.HashMap
 import com.univocity.parsers.csv.{CsvParser, CsvParserSettings}
-import es.dmr.uimp.clustering.KMeansClusterInvoices
-import es.dmr.uimp.clustering.BisectingKMeansClusterInvoices
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.rdd.RDD
+
+import java.text.SimpleDateFormat
 
 object InvoicePipeline {
 
-  case class Purchase(invoiceNo : String, quantity : Int, invoiceDate : String,
-                      unitPrice : Double, customerID : String, country : String)
+  case class Purchase(invoiceNo: String, quantity: Int, invoiceDate: String,
+                      unitPrice: Double, customerID: String, country: String)
 
-  case class Invoice(invoiceNo : String, avgUnitPrice : Double,
-                     minUnitPrice : Double, maxUnitPrice : Double, time : Double,
-                     numberItems : Double, lastUpdated : Long, lines : Int, customerId : String)
+  case class Invoice(invoiceNo: String, avgUnitPrice: Double,
+                     minUnitPrice: Double, maxUnitPrice: Double, time: Double,
+                     numberItems: Double, lastUpdated: Long, lines: Int, customerId: String)
 
   def main(args: Array[String]) {
 
@@ -39,101 +38,76 @@ object InvoicePipeline {
 
     // TODO: Load model and broadcast
 
-    val modelKmeans = loadKMeansAndThreshold(sc,modelFile,thresholdFile)
-    val kmeans_centroid = ssc.sparkContext.broadcast(modelKmeans._1)
-    val kmeans_threshold = ssc.sparkContext.broadcast(modelKmeans._2)
+    val (kmeansModel, kmeansThreshold) = loadKMeansAndThreshold(sc, modelFile, thresholdFile)
+    val (bisectModel, bisectThreshold) = loadBisectKMeansAndThreshold(sc, modelFileBisect, thresholdFileBisect)
 
-    val modelBisect = loadBisectKMeansAndThreshold(sc,modelFileBisect,thresholdFileBisect)
-    val bisect_centroid = ssc.sparkContext.broadcast(modelBisect._1)
-    val bisect_threshold = ssc.sparkContext.broadcast(modelBisect._2)
-    
+    val bcKmeansModel = sc.broadcast(kmeansModel)
+    val bcBisectModel = sc.broadcast(bisectModel)
+    val bcKmeansThreshold = sc.broadcast(kmeansThreshold)
+    val bcBisectThreshold = sc.broadcast(bisectThreshold)
+
     // Broadcast the Kafka brokers to make them available in all nodes
     val broadcastBrokers = ssc.sparkContext.broadcast(brokers)
-    println("")
-    println("######################################################################################")
-    println("Brokers")
-    println(brokers)
-    println("######################################################################################")
-    println("")
 
     // TODO: Build pipeline
 
-
-    // connect to kafka
+    // Connect to Kafka and parse input data
     val purchasesFeed = connectToPurchases(ssc, zkQuorum, group, topics, numThreads)
-    // Print the raw purchases
-    purchasesFeed.print()
 
-    purchasesFeed.foreachRDD { rdd =>
-      val invoices = rdd.map(_._2) // Consideramos sólo el cuerpo del mensaje (factura)
-      // TODO: Lógica para identificar facturas problemáticas, canceladas, y aplicar clustering
-      invoices.collect().foreach(println)
-    }
+    // Parse the input data and create the purchases DStream
+    val purchasesDStream = parsePurchases(purchasesFeed)
+    purchasesDStream.print(5)
+    val invoicesDStream = purchasesDStream.updateStateByKey(updateInvoice)
+    invoicesDStream.print(5)
 
-    // Parse the raw purchases into Purchase objects
-    // val purchases = purchasesFeed.map(record => {
-    //     val fields = record._2.split(",")
-    //     val invoiceNo = fields(0)
-    //     (invoiceNo, List(fields.slice(1, fields.length).mkString(",")))
-    // })
+    // Implement updateStateByKey to keep track invoices
 
-    // // Group the purchases by invoiceNo
-    // val updateFunc = (newValues: Seq[List[String]], runningValue: Option[List[String]]) => {
-    //   val current = runningValue.getOrElse(List())
-    //   val updated = current ++ newValues.flatten
-    //   Some(updated)
-    // }
-    // // Update the state of the grouped invoices
-    // val invoiceState = purchases.updateStateByKey[List[String]](updateFunc)
-
-    // // Print the grouped invoices
-    // invoiceState.print()
-
-    // Filter for invalid invoices
-    // val invalidInvoices = invoiceState.filter(record => {
-    //     val fields = record._2.head.split(",")
-    //     val invoiceDate = fields(3)  // assuming 4th field is InvoiceDate
-    //     val customerID = fields(5)  // assuming 6th field is CustomerID
-    //     invoiceDate.isEmpty || customerID.isEmpty
-    // }).map(invoice => (invoice._1, invoice._2.mkString(",")))  // Formatting the invoice data for Kafka☺
-
-    // invalidInvoices.print()
-
-    // // Publish invalid invoices to Kafka
-    // invalidInvoices.foreachRDD(rdd => {
-    //   publishToKafka("invalid_invoices")(broadcastBrokers)(rdd)
-    // })
-
-    // TODO: Find anomalies using KMeans
-    // TODO: Find anomalies using Bisecting KMeans
-    // TODO: Filter canceled invoices
 
     // TODO: rest of pipeline
 
+    // TODO: Filter invalid invoices
+    // val invalidDStream = invalidInvoicePipeline(purchasesDStream)
+    // anomaliesBisection.foreachRDD(rdd => publishToKafka("invalid_invoices")(broadcastBrokers)(rdd))
 
-    // TOPICS -------------------
-    // anomalies_kmeans
-    // anomalies_kmeans_bisect
-    // cancelations_ma - “cancelaciones” - Recuerde, en el topic de cancelaciones se deben publicar el número de cancelaciones en los últimos 8 minutos, no mostrarlas todas.
-    // invalid_invoices - facturas erroneas
+    // TODO: Filter canceled invoices
+    // val WINDOW_LENGTH = 8
+    // val SLIDE_INTERVAL = 20
+    // val cancelDStream = cancelationPipeline(purchasesDStream, WINDOW_LENGTH, SLIDE_INTERVAL)
+    // cancelDStream.foreachRDD(rdd => publishToKafka("cancelations_ma")(broadcastBrokers)(rdd))
 
-
+    // TODO: Find anomalies using KMeans
+    // anomaliesKmeans.foreachRDD(rdd => publishToKafka("anomalies_kmeans")(broadcastBrokers)(rdd))
+    // TODO: Find anomalies using Bisecting KMeans
+    // anomaliesBisection.foreachRDD(rdd => publishToKafka("anomalies_kmeans_bisect")(broadcastBrokers)(rdd))
 
     ssc.start() // Start the computation
     ssc.awaitTermination()
   }
 
-  def publishToKafka(topic : String)(kafkaBrokers : Broadcast[String])(rdd : RDD[(String, String)]) = {
-    rdd.foreachPartition( partition => {
-      val producer = new KafkaProducer[String, String](kafkaConf(kafkaBrokers.value))
-      partition.foreach( record => {
-        producer.send(new ProducerRecord[String, String](topic, record._1,  record._2.toString))
-      })
-      producer.close()
-    })
+
+  // ------------------- LOAD MODELS AND THRESHOLDS -------------------
+  def loadKMeansAndThreshold(sc: SparkContext, modelFile: String, thresholdFile: String): Tuple2[KMeansModel, Double] = {
+    val kmeans = KMeansModel.load(sc, modelFile)
+    // parse threshold file
+    val rawData = sc.textFile(thresholdFile, 20)
+    val threshold = rawData.map { line => line.toDouble }.first()
+
+    (kmeans, threshold)
   }
 
-  def kafkaConf(brokers : String) = {
+  def loadBisectKMeansAndThreshold(sc: SparkContext, modelFile: String, thresholdFile: String): Tuple2[BisectingKMeansModel, Double] = {
+    val bisectModel = BisectingKMeansModel.load(sc, modelFile)
+    // parse threshold file
+    val rawData = sc.textFile(thresholdFile, 20)
+    val threshold = rawData.map { line => line.toDouble }.first()
+
+    (bisectModel, threshold)
+  }
+
+  // ------------------- KAFKA METHODS -------------------
+
+  // Kafka configuration
+  def kafkaConf(brokers: String) = {
     val props = new HashMap[String, Object]()
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers)
     props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
@@ -141,34 +115,119 @@ object InvoicePipeline {
     props
   }
 
-  /**
-    * Load the model information: centroid and threshold
-    */
-  def loadKMeansAndThreshold(sc: SparkContext, modelFile : String, thresholdFile : String) : Tuple2[KMeansModel,Double] = {
-    val kmeans = KMeansModel.load(sc, modelFile)
-    // parse threshold file
-    val rawData = sc.textFile(thresholdFile, 20)
-    val threshold = rawData.map{line => line.toDouble}.first()
-
-    (kmeans, threshold)
+  // Publish the anomalies to Kafka topic
+  def publishToKafka(topic: String)(kafkaBrokers: Broadcast[String])(rdd: RDD[(String, String)]) = {
+    rdd.foreachPartition(partition => {
+      val producer = new KafkaProducer[String, String](kafkaConf(kafkaBrokers.value))
+      partition.foreach(record => {
+        producer.send(new ProducerRecord[String, String](topic, record._1, record._2.toString))
+      })
+      producer.close()
+    })
   }
 
-  def loadBisectKMeansAndThreshold(sc: SparkContext, modelFile : String, thresholdFile : String) : Tuple2[BisectingKMeansModel,Double] = {
-    val bisectModel = BisectingKMeansModel.load(sc, modelFile)
-    // parse threshold file
-    val rawData = sc.textFile(thresholdFile, 20)
-    val threshold = rawData.map{line => line.toDouble}.first()
-
-    (bisectModel, threshold)
-  }
-
-
-  def connectToPurchases(ssc: StreamingContext, zkQuorum : String, group : String,
-                         topics : String, numThreads : String): DStream[(String, String)] ={
+  // Connect to Kafka and parse input data
+  def connectToPurchases(ssc: StreamingContext, zkQuorum: String, group: String,
+                         topics: String, numThreads: String): DStream[(String, String)] = {
 
     ssc.checkpoint("checkpoint")
     val topicMap = topics.split(",").map((_, numThreads.toInt)).toMap
     KafkaUtils.createStream(ssc, zkQuorum, group, topicMap)
   }
 
+  // Parse the input data and create the purchases DStream
+  def parsePurchases(purchasesFeed: DStream[(String, String)]): DStream[(String, Purchase)] = {
+    val purchases = purchasesFeed.map { case (_, line) =>
+      val Array(invoiceNo, _, _, quantity, invoiceDate, unitPrice, customerID, country) = line.split(",")
+      val purchase = Purchase(invoiceNo, quantity.toInt, invoiceDate, unitPrice.toDouble, customerID, country)
+      (invoiceNo, purchase)
+    }
+
+    purchases
+  }
+
+  // ------------------- PIPELINES METHODS -------------------
+
+  // Cancelation Pipeline
+  // 1 - Receive a DStream[(String, Invoice)].
+  // 2 - Filter this DStream to keep only the cancelled ones (the ones that start with C in their InvoiceNo)
+  // 3 - I apply a countByWindow that should give me a DStream with RDD that include the amount of the same ones.
+  // 4 - I make a foreach to publish them in kafka with the function publish to kafka
+  def cancelationPipeline(invoices: DStream[(String, Invoice)],
+                          window_length: Int = 8,
+                          slide_interval: Int = 20): DStream[(String, String)] = {
+    // Filter canceled invoices
+    val filteredInvoices = invoices.filter(p => p._2.invoiceNo.startsWith("C"))
+    // Count by window
+    val countCanceledDStream = filteredInvoices.countByWindow(Minutes(window_length), Seconds(slide_interval))
+
+    // Transform to publish in kafka
+    countCanceledDStream.transform { rdd =>
+      rdd.map(count =>
+        (count.toString, "Facturas canceladas en " + window_length.toString + " minutos: " + count.toString)
+      )
+    }
+  }
+
+  // Filter invalid invoices
+  def invalidPipeline(invoices: DStream[(String, Invoice)]) = {
+    // Filter canceled invoices
+    invoices.filter(inv => isErroneous(inv._2))
+    // .foreachRDD(rdd => publishToKafka("facturas_erroneas")(kafkaBrokers)(rdd))
+
+  }
+
+  // Define a function to identify erroneous invoices
+  private def isErroneous(invoice: Invoice): Boolean = {
+    // Check for null values
+    for (field <- invoice.productIterator) {
+      if (field == null) return true
+    }
+
+    false
+  }
+
+  // Función de actualización
+  def updateInvoice(newPurchases: Seq[Purchase], runningInvoice: Option[Invoice]): Option[Invoice] = {
+
+    if (newPurchases.isEmpty) {
+      // If there are no new purchases for this invoice, keep the current state
+      runningInvoice
+    } else {
+      // Compute new values for the invoice based on the new purchases and the current state
+      val invoice = runningInvoice.getOrElse(Invoice(newPurchases.head.invoiceNo, 0, 0, 0, 0, 0, 0, 0, newPurchases.head.customerID))
+
+      // Update the invoice with the new values
+      val lines = invoice.lines + newPurchases.size
+      val numberItems = newPurchases.map(_.quantity).sum + invoice.numberItems
+      val avgUnitPrice = (newPurchases.map(_.quantity).sum + invoice.avgUnitPrice) / invoice.lines
+      val minUnitPrice = Math.min(newPurchases.map(_.unitPrice).min, invoice.minUnitPrice)
+      val maxUnitPrice = Math.max(newPurchases.map(_.unitPrice).max, invoice.maxUnitPrice)
+      val lastUpdated = System.currentTimeMillis()
+      val customerId = newPurchases.head.customerID
+
+      val updatedInvoice = Invoice(invoice.invoiceNo, avgUnitPrice, minUnitPrice, maxUnitPrice, 0, numberItems, lastUpdated, lines, customerId)
+
+      Some(updatedInvoice)
+    }
+  }
+
+  // Invoice
+  //  invoiceNo: String,
+  //  avgUnitPrice: Double,
+  //  minUnitPrice: Double,
+  //  maxUnitPrice: Double,
+  //  time: Double,
+  //  numberItems: Double,
+  //  lastUpdated: Long,
+  //  lines: Int,
+  //  customerId: String)
+
+  // Purchase
+  //  invoiceNo: String,
+  //  quantity: Int,
+  //  invoiceDate: String,
+  //  unitPrice: Double,
+  //  customerID: String,
+  //  country: String)
 }
