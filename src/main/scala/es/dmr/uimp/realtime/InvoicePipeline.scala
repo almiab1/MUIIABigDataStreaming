@@ -244,7 +244,7 @@ object InvoicePipeline {
     }
 
     // If the running invoice is not emitted and the time threshold has passed, emit it
-    if(runningInvoice.get.state != InvoiceStatus.Emitted && timeDiff > minTimeThreshold) {
+    if(runningInvoice.get.state == InvoiceStatus.NonEmited && timeDiff > minTimeThreshold) {
       val emittedInvoice = runningInvoice.get.copy(state = InvoiceStatus.Emitting)
       return Some(emittedInvoice)
     }
