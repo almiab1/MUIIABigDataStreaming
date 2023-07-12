@@ -32,8 +32,8 @@ object InvoiceDataProducer extends App {
     producer.send(data)
 
     // Introduce random delay
-    // Thread.sleep(5 +  (5*Random.nextFloat()).toInt)
-    Thread.sleep(5000)
+    Thread.sleep(5 +  (5*Random.nextFloat()).toInt)
+    // Thread.sleep(5000)
   }
 
   producer.close()

@@ -47,27 +47,24 @@ object Clustering {
     // TODO : Featurize the data
     // Group by InvoiceNo and compute the average, min and max of the UnitPrice
     println("#################### INIT FEATURIZE DATA ####################")
-
     println("#################### Original data ####################")
     df.show(5)
 
-    var featureDf = df.groupBy("InvoiceNo")
-      .agg(avg("UnitPrice").as("AvgUnitPrice"),
-        min("UnitPrice").as("MinUnitPrice"),
-        max("UnitPrice").as("MaxUnitPrice"),
-        count("Quantity").as("NumberItems"),
-        first("Hour").as("Time"),
-        first("CustomerID").as("CustomerID"),
-        last("InvoiceDate").as("InvoiceDate")
-      ).orderBy("InvoiceNo")
+    val featureDf = df.groupBy("InvoiceNo").agg(
+      avg("UnitPrice").as("AvgUnitPrice"),
+      min("UnitPrice").as("MinUnitPrice"),
+      max("UnitPrice").as("MaxUnitPrice"),
+      first("Hour").as("Time"),
+      sum("Quantity").as("NumberItems")// ,
+      // first("CustomerID").as("CustomerID"),
+      // last("InvoiceDate").as("InvoiceDate")
+      )
 
     println("#################### New Featurized data ####################")
     featureDf.show(5)
-
     println("#################### END FEATURIZE DATA ####################")
 
     featureDf
-    // df
   }
 
   def filterData(df : DataFrame) : DataFrame = {
@@ -75,19 +72,24 @@ object Clustering {
 
     println("#################### INIT FILTER DATA ####################")
 
-    var filterDf = df.filter(!col("InvoiceNo").startsWith("C") ||
-                        col("InvoiceNo").isNotNull ||
-                        col("CustomerID").isNotNull ||
-                        col("CustomerID").notEqual("") ||
-                        col("InvoiceDate").isNotNull ||
-                        col("InvoiceDate").notEqual(""))
+    val filterDf = df.filter(
+      !col("InvoiceNo").startsWith("C") &&
+      // col("CustomerID").isNotNull &&
+      // col("InvoiceDate").isNotNull &&
+      col("Time").isNotNull &&
+      col("NumberItems") > 0 &&
+      col("AvgUnitPrice") > 0 &&
+      col("MinUnitPrice") > 0 &&
+      col("MaxUnitPrice") > 0 &&
+      col("Time") >= 0// &&
+      // col("InvoiceDate").notEqual("")
+    )
 
     println("#################### Filtered data ####################")
     filterDf.show(5)
     println("######################## END data #####################")
 
     filterDf
-    // df
   }
 
   def toDataset(df: DataFrame): RDD[Vector] = {
@@ -107,28 +109,17 @@ object Clustering {
   }
 
   def elbowSelection(costs: Seq[Double], ratio : Double): Int = {
-    // TODO: Select the best model
-    val ratios = ArrayBuffer[Double]()
-
-    for (k <- 1 until costs.length) {
-      val currentRatio = costs(k) / costs(k - 1)
-      ratios += currentRatio
+    println("\n#################### ELBOW SELECTION ####################\n")
+    for (i <- 1 until costs.length) {
+      val err_ratio = costs(i) / costs(i - 1)
+      println(s"i=$i \n costs(i) / costs(i - 1): ${costs(i)} / ${costs(i-1)} = $err_ratio \n Selected K: ${i - 1}")
+      if (err_ratio > ratio) {
+        println(s"$i greater than $ratio --> Selected K: ${i - 1}")
+        println("\n#################### END ELBOW SELECTION ####################\n")
+        return i - 1
+      }
     }
-
-    val selectedK = ratios.indexWhere(_ > ratio) + 1
-
-    // Print the results
-    println()
-    println()
-    println("#################### ELBOW SELECTION ####################")
-    println("Costs: " + costs)
-    println("Ratios: " + ratios)
-    println("Selected K: " + selectedK)
-    println("#################### END ELBOW SELECTION ####################")
-    println()
-    println()
-
-    selectedK
+    return costs.length - 1 // return the maximum k if no elbow point is found
   }
 
   def saveThreshold(threshold : Double, fileName : String) = {

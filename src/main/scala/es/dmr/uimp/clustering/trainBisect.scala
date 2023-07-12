@@ -52,9 +52,9 @@ object BisectingKMeansClusterInvoices {
   def trainModel(data: RDD[Vector]): BisectingKMeansModel = {
 
     val models = 1 to 20 map { k =>
-      val kmeans = new BisectingKMeans()
-      kmeans.setK(k) // find that one center
-      kmeans.run(data)
+      val bisectKMeans = new BisectingKMeans()
+      bisectKMeans.setK(k) // find that one center
+      bisectKMeans.run(data)
     }
 
     val costs = models.map(model => model.computeCost(data))
