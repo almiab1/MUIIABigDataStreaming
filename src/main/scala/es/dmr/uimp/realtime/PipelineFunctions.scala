@@ -47,9 +47,8 @@ object PipelineFunctions {
   def invalidPipeline(invoices: DStream[(String, Invoice)]) = {
     // Filter invoices which are emitting and are invalid
     val invalidInvoices = invoices.filter(inv => inv._2.state == InvoiceStatus.Emitting && isInvalid(inv._2))
+    // Transform to publish in kafka
     invalidInvoices.transform(rdd => rdd.map(inv => (inv._1, inv._2.toString)))
-    // .foreachRDD(rdd => publishToKafka("facturas_erroneas")(kafkaBrokers)(rdd))
-
   }
 
   // Function to identify erroneous invoices
@@ -67,31 +66,44 @@ object PipelineFunctions {
   // --------------------------------------- CLUSTERING PIPELINE FUNCTIONS ---------------------------------------
 
   /**
-   * Processes a stream of invoices and filters out invoices that are emitting and are anomalous.
-   * An invoice is considered anomalous if it is emitting and its features are outside the threshold.
-   *
-   * @param invoices  The input stream of invoices as (key, value) pairs, where the key is a string identifier
-   *                  and the value is an Invoice object.
-   * @param model     The clustering model to use for anomaly detection.
-   * @param threshold The threshold to use for anomaly detection.
-   * @return The stream of anomalous invoices, transformed for publishing in Kafka.
-   */
+  * Processes a stream of invoices and performs clustering to identify anomalous invoices based on their distance
+  * to cluster centroids.
+  *
+  * @param invoices   The input stream of invoices as (key, value) pairs, where the key is a string identifier
+  *                   and the value is an Invoice object.
+  * @param model      The clustering model to be used, represented as Either[KMeansModel, BisectingKMeansModel].
+  * @param threshold  A broadcast variable representing the distance threshold for identifying anomalous invoices.
+  * @return           The stream of anomalous invoices, transformed for publishing in Kafka.
+  */
   def clusteringPipeline(invoices: DStream[(String, Invoice)], model: Either[KMeansModel, BisectingKMeansModel], threshold: Broadcast[Double]): DStream[(String, String)] = {
     // Filter invoices which are emitting
     val emittingInvoices = invoices.filter(inv => inv._2.state == InvoiceStatus.Emitting)
-    // Run KMeans on the invoices to get the distance to the centroid
-    val invoicesWithDistance = emittingInvoices.map(inv => (inv._1, inv._2, model match {
-      case Left(kmeansModel) => kmeansModel.predict(Vectors.dense(inv._2.avgUnitPrice, inv._2.minUnitPrice, inv._2.maxUnitPrice, inv._2.time, inv._2.numberItems))
-      case Right(bisectingKMeansModel) => bisectingKMeansModel.predict(Vectors.dense(inv._2.avgUnitPrice, inv._2.minUnitPrice, inv._2.maxUnitPrice, inv._2.time, inv._2.numberItems))
-    }))
-    invoicesWithDistance.print(10)
+
+    // Compute the distance of each invoice to its cluster centroid
+    val invoicesWithDistance = emittingInvoices.map { case (id, invoice) =>
+      // Compute features
+      val features = Vectors.dense(invoice.avgUnitPrice, invoice.minUnitPrice, invoice.maxUnitPrice, invoice.time, invoice.numberItems)
+      // Get cluster id and centroid
+      val clusterId = model match {
+        case Left(kmeansModel) => kmeansModel.predict(features)
+        case Right(bisectModel) => bisectModel.predict(features)
+      }
+      val centroid = model match {
+        case Left(kmeansModel) => kmeansModel.clusterCenters(clusterId)
+        case Right(bisectModel) => bisectModel.clusterCenters(clusterId)
+      }
+      // Compute distance to centroid
+      val distance = Vectors.sqdist(features, centroid)
+      // Return the invoice with its distance
+      (id, invoice, distance)
+    }
+
     // Filter invoices which are emitting and are anomalous
-    val anomalousInvoices = invoicesWithDistance.filter(inv => inv._3 > threshold.value)
+    val anomalousInvoices = invoicesWithDistance.filter(_._3 > threshold.value)
+
     // Transform to publish in kafka
-    anomalousInvoices.transform { rdd =>
-      rdd.map(inv =>
-        (inv._1, "Factura " + inv._2.invoiceNo + " con distancia " + inv._3.toString)
-      )
+    anomalousInvoices.map { case (id, invoice, distance) =>
+      (id, s"Factura ${invoice.invoiceNo} con distancia $distance")
     }
   }
   // --------------------------------------- STATE MANAGEMENT METHODS ---------------------------------------
@@ -143,6 +155,12 @@ object PipelineFunctions {
     runningInvoice
   }
 
+  /**
+  * Creates a new invoice based on the provided sequence of purchases.
+  *
+  * @param purchases   A sequence of purchases to compute the new values for the invoice.
+  * @return            The new created invoice with updated values based on the purchases and current state.
+  */
   private def newInvoice(purchases: Seq[Purchase]): Invoice = {
     // Compute new values for the invoice based on the new purchases and the current state
     val lines = purchases.size
@@ -157,6 +175,13 @@ object PipelineFunctions {
     Invoice(purchases.head.invoiceNo, avgUnitPrice, minUnitPrice, maxUnitPrice, time, numberItems, lastUpdated, lines, customerID, InvoiceStatus.NonEmitted)
   }
 
+  /**
+  * Updates the values of a running invoice based on new purchases and the current state.
+  *
+  * @param newPurchases     A sequence of new purchases to compute the new values for the invoice.
+  * @param runningInvoice   The current state of the running invoice to be updated.
+  * @return                 The updated invoice with new values based on the new purchases and current state.
+  */
   private def updateValuesInvoice(newPurchases: Seq[Purchase], runningInvoice: Invoice): Invoice = {
     // Compute new values for the invoice based on the new purchases and the current state
     val lines = newPurchases.size + runningInvoice.lines // Number of purchases in the invoice
@@ -180,6 +205,12 @@ object PipelineFunctions {
     Invoice(newPurchases.head.invoiceNo, avgUnitPrice, minUnitPrice, maxUnitPrice, time, numberItems, lastUpdated, lines, customerId, runningInvoice.state)
   }
 
+  /**
+  * Extracts the hour from a given date string and returns it as a double value.
+  *
+  * @param date   The date string from which to extract the hour.
+  * @return       The hour extracted from the date as a double value, or -1.0 if the extraction fails.
+  */
   private def getHour(date: String): Double = {
     if (date != null && date.nonEmpty) {
       val hour = date.substring(10).split(":")(0)

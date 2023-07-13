@@ -65,7 +65,7 @@ object InvoicePipeline {
 
     // Create a DStream of invoices and update the state
     val invoicesDStream = purchasesDStream.updateStateByKey(updateInvoice)
-    invoicesDStream.print(5)
+    // invoicesDStream.print(5)
 
     // TODO: rest of pipeline
 
@@ -78,12 +78,12 @@ object InvoicePipeline {
     val cancelDStream = cancellationPipeline(invoicesDStream, WINDOW_LENGTH, SLIDE_INTERVAL) // Get cancelations in the last 8 minutes every 1 minute
     cancelDStream.foreachRDD(rdd => publishToKafka("cancelations_ma")(broadcastBrokers)(rdd))
 
-    // TODO: Find anomalies using KMeans
+    // Find anomalies using KMeans
     val anomaliesKmeans = clusteringPipeline(invoicesDStream, Left(kmeansModel), bcKmeansThreshold)
-    anomaliesKmeans.print(5)
     anomaliesKmeans.foreachRDD(rdd => publishToKafka("anomalies_kmeans")(broadcastBrokers)(rdd))
-    // TODO: Find anomalies using Bisecting KMeans
-    // anomaliesBisection.foreachRDD(rdd => publishToKafka("anomalies_kmeans_bisect")(broadcastBrokers)(rdd))
+    // Find anomalies using Bisecting KMeans
+    val anomaliesBisection = clusteringPipeline(invoicesDStream, Right(bisectModel), bcBisectThreshold)
+    anomaliesBisection.foreachRDD(rdd => publishToKafka("anomalies_kmeans_bisect")(broadcastBrokers)(rdd))
 
     ssc.start() // Start the computation
     ssc.awaitTermination()
