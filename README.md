@@ -162,7 +162,7 @@ Finalmente se recorre el DStream resultante publicando cada elemento en el topic
 ```scala
 // ------------------- INVALID INVOICES -------------------
 val invalidDStream = invalidPipeline(invoicesDStream) // Get invalid invoices
-invalidDStream.foreachRDD(rdd => publishToKafka("invalid\_invoices")(broadcastBrokers)(rdd))
+invalidDStream.foreachRDD(rdd => publishToKafka("invalid_invoices")(broadcastBrokers)(rdd))
 ```
 
 ### 3.5. **Sub-pipeline de facturas canceladas**
@@ -184,14 +184,14 @@ val SLIDE\_INTERVAL = 60 // 1 minute
 
 // Get cancelations in the last 8 minutes every 1 minute
 val cancelDStream = cancellationPipeline(invoicesDStream, WINDOW\_LENGTH, SLIDE\_INTERVAL)     
-cancelDStream.foreachRDD(rdd => publishToKafka("cancelations\_ma")(broadcastBrokers)(rdd))
+cancelDStream.foreachRDD(rdd => publishToKafka("cancelations_ma")(broadcastBrokers)(rdd))
 ```
 
 Es importante destacar el uso de la función countByWindow en este sub-pipeline, ya que permite realizar el conteo de facturas canceladas en un período de tiempo específico utilizando una ventana deslizante. Esta función proporciona una forma conveniente de calcular automáticamente el recuento dentro de la ventana deslizante, sin necesidad de implementar manualmente la lógica de conteo. Además, al utilizar una ventana deslizante, se obtienen recuentos actualizados en intervalos regulares a medida que se procesa el flujo de facturas entrante.
 
 Un ejemplo de la salida obtenida en el topic "cancelations\_ma" de Kafka sería el siguiente:
 ```shell
-bigdata@bigdata:/opt/Kafka/kafka\_2.11-2.3.0$ bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic cancelations\_ma
+bigdata@bigdata:/opt/Kafka/kafka\_2.11-2.3.0$ bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic cancelations_ma
 
 Facturas canceladas en 1 minutos: 52
 Facturas canceladas en 1 minutos: 138
