@@ -44,7 +44,7 @@ object PipelineFunctions {
    * @param invoices The input stream of invoices as (key, value) pairs, where the key is a string identifier
    *                 and the value is an Invoice object.
    */
-  def invalidPipeline(invoices: DStream[(String, Invoice)]) = {
+  def invalidPipeline(invoices: DStream[(String, Invoice)]): DStream[(String, String)] = {
     // Filter invoices which are emitting and are invalid
     val invalidInvoices = invoices.filter(inv => inv._2.state == InvoiceStatus.Emitting && isInvalid(inv._2))
     // Transform to publish in kafka
