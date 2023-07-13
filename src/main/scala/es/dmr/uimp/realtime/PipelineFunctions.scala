@@ -146,7 +146,7 @@ object PipelineFunctions {
     }
 
     // If there is new purchases, update the invoice
-    if (!newPurchases.isEmpty) {
+    if (runningInvoice.get.state == InvoiceStatus.NonEmitted && !newPurchases.isEmpty) {
       // Update the invoice with the new values
       val updatedInvoice = updateValuesInvoice(newPurchases, runningInvoice.get)
       return Some(updatedInvoice)

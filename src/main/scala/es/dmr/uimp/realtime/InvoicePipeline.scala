@@ -43,7 +43,7 @@ object InvoicePipeline {
     // Checkpointing
     ssc.checkpoint("./checkpoint")
 
-    // TODO: Load model and broadcast
+    // Load model and broadcast
 
     val (kmeansModel, kmeansThreshold) = loadKMeansAndThreshold(sc, modelFile, thresholdFile)
     val (bisectModel, bisectThreshold) = loadBisectKMeansAndThreshold(sc, modelFileBisect, thresholdFileBisect)
@@ -54,7 +54,7 @@ object InvoicePipeline {
     // Broadcast the Kafka brokers to make them available in all nodes
     val broadcastBrokers = ssc.sparkContext.broadcast(brokers)
 
-    // TODO: Build pipeline
+    // Build pipeline
 
     // Connect to Kafka and parse input data
     val purchasesFeed = connectToPurchases(ssc, zkQuorum, group, topics, numThreads)
@@ -67,17 +67,20 @@ object InvoicePipeline {
     val invoicesDStream = purchasesDStream.updateStateByKey(updateInvoice)
     // invoicesDStream.print(5)
 
-    // TODO: rest of pipeline
+    // Restt of pipeline
 
+    // ------------------- INVALID INVOICES -------------------
     val invalidDStream = invalidPipeline(invoicesDStream) // Get invalid invoices
     invalidDStream.foreachRDD(rdd => publishToKafka("invalid_invoices")(broadcastBrokers)(rdd))
 
+    // ------------------- CANCELED INVOICES -------------------
     // Define window and slide interval
     val WINDOW_LENGTH = 8 // 8 minutes
     val SLIDE_INTERVAL = 60 // 1 minute
     val cancelDStream = cancellationPipeline(invoicesDStream, WINDOW_LENGTH, SLIDE_INTERVAL) // Get cancelations in the last 8 minutes every 1 minute
     cancelDStream.foreachRDD(rdd => publishToKafka("cancelations_ma")(broadcastBrokers)(rdd))
 
+    // ------------------- CLUSTERING INVOICES -------------------
     // Find anomalies using KMeans
     val anomaliesKmeans = clusteringPipeline(invoicesDStream, Left(kmeansModel), bcKmeansThreshold)
     anomaliesKmeans.foreachRDD(rdd => publishToKafka("anomalies_kmeans")(broadcastBrokers)(rdd))
