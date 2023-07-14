@@ -1,4 +1,5 @@
 #!/bin/bash
+
 KAFKA=/opt/Kafka/kafka_2.11-2.3.0/
 
 # Go to kafka folder
