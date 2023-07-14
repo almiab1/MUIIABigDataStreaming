@@ -15,6 +15,8 @@ Alejandro Mira Abad
 
 El proyecto ha sido desarrollado en Scala empleando las tecnologías dedicadas al análisis y procesamiento de flujos de datos, estas son **Apache Spark Streaming** y **Apache Kafka**. Se disponen de varios scripts de ejecución, principalmente encontramos el script _start_training.sh_ que ejecuta el entrenamiento de los modelos y el script _start_pipeline.sh_ que ejecuta el pipeline principal.
 
+### 0.1. **Ejecutar el entrenamiento de los modelos de clustering**
+
 Respecto al entrenamiento, si quisiéramos evitar problemas de ejecución, se debe asegurar que los directorios _clustering_ y _clustering_bisect_ estén vacíos, así como no estén creados los archivos _threshold_ y _threshold_bisect_. Para ejecutar el entrenamiento vamos al directorio raíz y ejecutamos la siguiente sentencia en el terminal:
 
 ```bash
@@ -44,6 +46,8 @@ Para lanzar el pipeline, ejecutamos el siguiente comando en la raíz del proyect
 ./start_pipeline.sh
 ```
 
+### 0.2. **Ejecutar el pipeline**
+
 Al igual con el lanzador del entrenamiento, puede que el script carezca de permisos, para ello debemos ejecutar el siguiente comando:
 
 ```bash
@@ -56,7 +60,7 @@ De esta manera ya tendríamos lanzado nuestro pipeline y estaríamos escuchando 
 ./productiondata.sh
 ```
 
-### 0.1. **Lectura del topic**
+### 0.3. **Lectura del topic**
 
 Adicionalmente, se ha preparado un script mediante el cual poder consumir en consola los mensajes que se reciben en un tópico especifico. Para ello se debe ejecutar el siguiente comando:
 
@@ -70,7 +74,7 @@ Como se puede observar, en la llamada se especifican dos parámetros, el primero
 
 El trabajo se ha desarrollado utilizando tecnologías dedicadas al análisis y procesamiento de flujos de datos, estas son **Apache Spark Streaming** y **Apache Kafka**. Estas herramientas han sido fundamentales para la implementación y gestión eficiente de flujos de datos en tiempo real. Además, es importante destacar que el proyecto ha sido desarrollado en el lenguaje de programación Scala, el cual ha brindado un alto nivel de concisión y potencia para la manipulación de datos a gran escala
 
-El supuesto caso planteado trata de detectar facturas anómalas, con el objetivo de poder detectar posibles fraudes u oportunidades de ofrecer ofertas a clientes especiales. En base a un feed de compras, el sistema debe procesar el flujo de datos entrante y procesarlos. Se han pre-entrenado dos modelos de clustering, KMeans y BisectionKMeans, para detectar las deseadas facturas anómalas. Paralelamente el sistema identifica y separa las facturas que presentan algún problema (el id del cliente está vacío, falta la fecha, etc), a su vez el sistema notifica el número de facturas canceladas (se identifican porque el campo “InvoiceNo” empieza por “C”) en los últimos 8 minutos (actualizando cada minuto).
+El supuesto caso planteado trata de detectar facturas anómalas, con el objetivo de poder detectar posibles fraudes u oportunidades de ofrecer ofertas a clientes especiales. Sobre la base de un feed de compras, el sistema debe procesar el flujo de datos entrante y procesarlos. Se han preentrenado dos modelos de clustering, KMeans y BisectionKMeans, para detectar las deseadas facturas anómalas. Paralelamente, el sistema identifica y separa las facturas que presentan algún problema (el id del cliente está vacío, falta la fecha, etc), a su vez el sistema notifica el número de facturas canceladas (se identifican porque el campo “InvoiceNo” empieza por “C”) en los últimos 8 minutos (actualizando cada minuto).
 
 El pipeline descrito se puede describir mediante la siguiente figura:
 
@@ -82,7 +86,7 @@ En la figura (Fig.1) se muestra como el feed de “compras” envía los registr
 
 ## 2. **Modelos de clustering y detección de anomalías**
 
-Previo a la implementación del pipeline donde se aplica la lógica diseñada para el caso descrito es necesario construir los modelos de clustering que servirán para una posterior detección de anomalías. En este caso se ha actuado en tres aspectos fundamentales de la definición e implementación de los modelos, las fases de selección de atributos y filtrado de los mismos. A su vez se ha implementado el método de selección de parámetros **_elbow_** con error intracluster. El flujo que siguen ambos modelos planteados es el mismo, inicialmente se cargan los datos, éstos pasan por un proceso de selección de características, posteriormente se filtran los datos resultantes siendo estos lo que recibirá el modelo final.
+Previo a la implementación del pipeline donde se aplica la lógica diseñada para el caso descrito, es necesario construir los modelos de clustering que servirán para una posterior detección de anomalías. En este caso se ha actuado en tres aspectos fundamentales de la definición e implementación de los modelos, las fases de selección de atributos y filtrado de los mismos. A su vez se ha implementado el método de selección de parámetros **_elbow_** con error intracluster. El flujo que siguen ambos modelos planteados es el mismo, inicialmente se cargan los datos, estos pasan por un proceso de selección de características, posteriormente se filtran los datos resultantes, siendo estos lo que recibirá el modelo final.
 
 En el proyecto se encuentran en el paquete _es.dmr.uimp.clustering_ los scripts correspondientes a la sección de clustering. En específico se encuentran 3 scripts, uno donde se encuentran los métodos principales que servirán para la fase de entrenamiento y otros dos que corresponden al flujo de definición y entrenamientos de los modelos propuestos (KMeans y BisectionKMeans). Con el fin de unificar el proceso de entrenamiento, paralelamente se ha creado un script a través del cual ejecutar los procesos de entrenamiento de clustering.
 
@@ -91,15 +95,15 @@ En el proyecto se encuentran en el paquete _es.dmr.uimp.clustering_ los scripts 
 Dado que los datos recibidos corresponden a compras realizadas, es necesario agrupar estas compras según su factura correspondiente. Durante este proceso de agrupación, se llevan a cabo varias acciones, como el cálculo del precio promedio, máximo y mínimo. Una vez que las compras se han agrupado, se obtiene un conjunto de facturas definidas por los siguientes atributos:
 
 - **InvoiceNo**: Identificador de la factura.
-- **AvgUnitPrice**: Precio promedio de las compras realizadas en la factura.
-- **MinUnitPrice**: Precio mínimo de las compras realizadas en la factura.
-- **MaxUnitPrice**: Precio máximo de las compras realizadas en la factura.
+- **AvgUnitPrice**: Precio promedio de las compras ejecutadas en la factura.
+- **MinUnitPrice**: Precio mínimo de las compras ejecutadas en la factura.
+- **MaxUnitPrice**: Precio máximo de las compras ejecutadas en la factura.
 - **NumberItems**: Cantidad de elementos comprados en la factura.
-- **Time**: Hora del día en que se realizó la factura.
+- **Time**: Hora del día en que se ejecutó la factura.
 
 ### 2.2 **Filtrado de facturas erróneas**
 
-En este caso se quiere limpiar el dataset entreat para mantener sólo aquellas facturas que estén correctas. Es por ello que se realiza un filtrado del mismo, eliminando aquellas facturas cuyos atributos contengan algún error. Se ha considerado como primera norma, que un dato es erróneo cuando es nulo. Del mismo modo, para los atributos numéricos como “_AvgUnitPrice_”, “_MinUnitPrice_”, “_MaxUnitPrice_”, “_NumberItems_” o “_Time_” se consideran erróneos cuando su valor es menor que 0. Finalmente, dado que pueden haber facturas canceladas, estas también se consideran como no deseadas en el conjunto final, por ende se filtran también aquellas facturas canceladas.
+En este caso se quiere limpiar el dataset para mantener solo aquellas facturas que estén correctas. Es por ello que se realiza un filtrado del mismo, eliminando aquellas facturas cuyos atributos contengan algún error. Se ha considerado, como primera norma, que un dato es erróneo cuando es nulo. Del mismo modo, para los atributos numéricos como “_AvgUnitPrice_”, “_MinUnitPrice_”, “_MaxUnitPrice_”, “_NumberItems_” o “_Time_” se consideran erróneos cuando su valor es menor que 0. Finalmente, dado que puede haber facturas canceladas, estas también se consideran como no deseadas en el conjunto final, por ende se filtran también aquellas facturas canceladas.
 
 ### 2.3. **Selección de parámetros, elbow selection**
 
@@ -107,7 +111,7 @@ El método de selección de parámetros elbow es una técnica ampliamente utiliz
 
 Una de las ventajas de este método es que no requiere conocimiento previo sobre los datos y puede aplicarse a diferentes algoritmos de clustering. Junto a ello, es un método simple y efectivo en la tarea de selección.
 
-Respecto a la implementación, se ha implementado en una función denominada **_elbowSelection_**. Este algoritmo toma como entrada una secuencia de costes, que representan los errores intra-cluster para diferentes valores de k, y un ratio umbral para seleccionar el punto de codo. El algoritmo se basa en iterar sobre los costos desde el segundo elemento hasta el último. En la iteración se calcula el ratio de error dividiendo el costo actual entre el costo anterior `(cost(i) / cost(i-1))`. En el caso que se encuentre un ratio de error mayor al umbral (especificado en los parámetros de la función), se considera que se ha encontrado el punto óptimo y se devuelve el número de clústeres correspondiente `(i - 1)`. Si no se encuentra ningún punto óptimo después de iterar sobre todos los costos, se devuelve el máximo valor de k (es decir, `costs.length - 1`) como el número óptimo de clústeres.
+Respecto a la implementación, se ha implementado en una función denominada **_elbowSelection_**. Este algoritmo toma como entrada una secuencia de costes, que representan los errores intra-cluster para diferentes valores de k, y un ratio umbral para seleccionar el punto de codo. El algoritmo se basa en iterar sobre los costos desde el segundo elemento hasta el último. En la iteración se calcula el ratio de error dividiendo el costo actual entre el costo anterior `(cost(i) / cost(i-1))`. En el caso de que se encuentre un ratio de error mayor al umbral (especificado en los parámetros de la función), se considera que se ha encontrado el punto óptimo y se devuelve el número de clústeres correspondiente `(i - 1)`. Si no se encuentra ningún punto óptimo después de iterar sobre todos los costos, se devuelve el máximo valor de k (es decir, `costs.length - 1`) como el número óptimo de clústeres.
 
 ### 2.4. **Entrenamiento - Ejecución**
 
@@ -122,7 +126,7 @@ Los umbrales resultantes del entrenamiento son los siguientes:
 - **Umbral del modelo KMeans**: 55403.623089850604
 - **Umbral del modelo BisectionKMeans**: 58023.35140518957
 
-Estos umbrales son utilizados posteriormente en el proceso de detección de anomalías en el flujo de facturas.
+Estos umbrales son empleados posteriormente en el proceso de detección de anomalías en el flujo de facturas.
 
 ## 3. **Pipeline**
 
@@ -163,13 +167,13 @@ El pipeline comienza estableciendo las conexiones necesarias, como obtener el Sp
 
 A continuación, los datos entrantes se procesan para transformar la tupla de cadenas de texto en una tupla que contenga el número de factura (invoiceNo) y un objeto de tipo Purchase. De esta manera, se obtiene un DStream del tipo DStream[(String, Purchase)].
 
-Una vez que los datos entrantes se han transformado en un formato adecuado para nuestro pipeline, es el momento de definir el estado del pipeline, el estado de las facturas. Esto se logra aplicando el método **_updateStateByKey_**, el cual recibe la función updateInvoice que hemos definido para controlar y actualizar el estado. El resultado es un DStream del tipo DStream[(String, Invoice)], lo cual nos permite completar las tareas definidas en el indicio del trabajo, como la detección de facturas canceladas, el filtrado de facturas inválidas y el clustering utilizando los modelos pre-entrenados.
+Una vez que los datos entrantes se han transformado en un formato adecuado para nuestro pipeline, es el momento de definir el estado del pipeline, el estado de las facturas. Esto se logra aplicando el método **_updateStateByKey_**, el cual recibe la función updateInvoice que hemos definido para controlar y actualizar el estado. El resultado es un DStream del tipo DStream[(String, Invoice)], lo cual nos permite completar las tareas definidas en el indicio del trabajo, como la detección de facturas canceladas, el filtrado de facturas inválidas y el clustering utilizando los modelos preentrenados.
 
 Con esta etapa completada, el pipeline está listo para realizar las siguientes acciones sobre las facturas y continuar con las tareas definidas en el trabajo.
 
 ### 3.3. **Estado de facturas**
 
-Dado que el clustering se hace sobre facturas, mientras que el feed consta de compras individuales. Esto hace que en el pipeline de streaming tenga que mantener un estado con la factura actual y, en base al SLA y la última fecha de modificación de la factura decidir cuándo emitir la factura a la salida y también eliminarla del estado para que este no crezca continuamente. Para lograr esto, se han diseñado una serie de funciones que gestionan el estado y manejan los distintos flujos de datos disponibles.
+Dado que el clustering se hace sobre facturas, mientras que el feed consta de compras individuales. Esto hace que en el pipeline de streaming tenga que mantener un estado con la factura actual y, sobre la base del SLA y la última fecha de modificación de la factura, decidir cuándo emitir la factura a la salida y también eliminarla del estado para que este no crezca continuamente. Para lograr esto, se han diseñado una serie de funciones que gestionan el estado y manejan los distintos flujos de datos disponibles.
 
 Para llevar a cabo esta tarea, se han definido un total de tres funciones auxiliares y una función principal llamada "**_updateInvoice_**". La función "_updateInvoice_" es donde se desarrolla la lógica para manejar el estado. Recibe dos parámetros: "newPurchases", que es una secuencia de nuevas compras que comparten el mismo ID de factura, y "runningInvoice", que representa el estado anterior y puede ser un objeto de tipo factura o nulo en el caso del primer estado (estado inicial).
 
@@ -189,15 +193,15 @@ Cuando la factura guardada en el estado tiene el estado "emitiendo", significa q
 
 4. **Facturas no emitidas cuya última actualización sea mayor al umbral de tiempo mínimo**
 
-En esta fase, se verifica el estado previo de la factura es “no emitido” y se comprueba cuánto tiempo ha pasado desde la última actualización. Se calcula el tiempo transcurrido y se compara con el umbral de tiempo mínimo establecido. Si se supera dicho umbral, se actualiza el estado de la factura a "emitiendo"; de lo contrario, se avanza a la siguiente fase.
+En esta fase, se verifica el estado previo de la factura, es “no emitido” y se comprueba cuánto tiempo ha pasado desde la última actualización. Se calcula el tiempo transcurrido y se compara con el umbral de tiempo mínimo establecido. Si se supera dicho umbral, se actualiza el estado de la factura a "emitiendo"; de lo contrario, se avanza a la siguiente fase.
 
-5. **Actualización de la factura en base a las nuevas compras**
+5. **Actualización de la factura con base en las nuevas compras**
 
-Después de verificar las fases anteriores, se comprueba si existen compras en el parámetro "newPurchases". En caso afirmativo, se actualiza la factura en función de las nuevas compras. Si no hay nuevas compras que añadir a la factura, se pasa a la siguiente fase por defecto. Es importante destacar la parte de actualización de los nuevos valores de la factura, que se realiza mediante la función "updateValuesInvoice". Esta función toma como parámetros las nuevas compras y la factura del estado previo, devolviendo una nueva factura con los valores actualizados.
+Después de comprobar las fases anteriores, se verifica si existen compras en el parámetro "newPurchases". En caso afirmativo, se actualiza la factura en función de las nuevas compras. Si no hay nuevas compras que añadir a la factura, se pasa a la siguiente fase por defecto. Es importante destacar la parte de actualización de los nuevos valores de la factura, que se realiza mediante la función "updateValuesInvoice". Esta función toma como parámetros las nuevas compras y la factura del estado previo, devolviendo una nueva factura con los valores actualizados.
 
 6. **Fase por defecto**
 
-Si no se cumpliesen las condiciones expuestas se ejecutaría esta fase la cual mantiene el estado previo de la factura.
+Si no se cumpliesen las condiciones expuestas, se ejecutaría esta fase, la cual mantiene el estado previo de la factura.
 
 Como se ha mencionado, el flujo de actualización va verificando las condiciones enumeradas y realiza diferentes acciones según se cumplan o no. Es importante mencionar los estados internos de la factura, que pueden ser "no emitido", "emitiendo" o "emitido". Basándonos en las especificaciones del trabajo, el SLA asegura que no haya más de 40 segundos entre compras de la misma factura. Esto nos permite determinar cuándo una factura está completa y lista para ser procesada, evitando procesar facturas incompletas. En cuanto al descarte de facturas, se ha establecido un umbral de 8 minutos, ya que es el tiempo necesario para el pipeline de recuento de facturas canceladas. Todo esto contribuye a mejorar la escalabilidad y el rendimiento del pipeline.
 
