@@ -15,7 +15,17 @@ Alejandro Mira Abad
 
 El proyecto ha sido desarrollado en Scala empleando las tecnologías dedicadas al análisis y procesamiento de flujos de datos, estas son **Apache Spark Streaming** y **Apache Kafka**. Se disponen de varios scripts de ejecución, principalmente encontramos el script _start_training.sh_ que ejecuta el entrenamiento de los modelos y el script _start_pipeline.sh_ que ejecuta el pipeline principal.
 
-### 0.1. **Ejecutar el entrenamiento de los modelos de clustering**
+### 0.1. **Compilación del proyecto**
+
+Dado que al compilar el proyecto se generan archivo de gran volumen, es necesario compilar el proyecto para poder ejecutarlo. La compilación se puede realizar mediante el siguiente comando en nuestra terminal:
+
+```bash
+sbt clean assembly
+```
+
+Esto nos generará él .jar que formará parte fundamental de la ejecución del programa.
+
+### 0.2. **Ejecutar el entrenamiento de los modelos de clustering**
 
 Respecto al entrenamiento, si quisiéramos evitar problemas de ejecución, se debe asegurar que los directorios _clustering_ y _clustering_bisect_ estén vacíos, así como no estén creados los archivos _threshold_ y _threshold_bisect_. Para ejecutar el entrenamiento vamos al directorio raíz y ejecutamos la siguiente sentencia en el terminal:
 
@@ -46,7 +56,7 @@ Para lanzar el pipeline, ejecutamos el siguiente comando en la raíz del proyect
 ./start_pipeline.sh
 ```
 
-### 0.2. **Ejecutar el pipeline**
+### 0.3. **Ejecutar el pipeline**
 
 Al igual con el lanzador del entrenamiento, puede que el script carezca de permisos, para ello debemos ejecutar el siguiente comando:
 
@@ -60,7 +70,7 @@ De esta manera ya tendríamos lanzado nuestro pipeline y estaríamos escuchando 
 ./productiondata.sh
 ```
 
-### 0.3. **Lectura del topic**
+### 0.4. **Lectura del topic**
 
 Adicionalmente, se ha preparado un script mediante el cual poder consumir en consola los mensajes que se reciben en un tópico especifico. Para ello se debe ejecutar el siguiente comando:
 
